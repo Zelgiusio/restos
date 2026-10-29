@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Restos autour du Palais de la Découverte</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#faf8f5;--card:#fff;--ink:#2a2622;--mute:#7a7268;--line:#e6e0d8;--acc:#c8512b;--acc2:#2f6f5e;--star:#f2a900}
+@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#181614;--card:#221f1c;--ink:#f0ebe4;--mute:#9b9288;--line:#38332d;--acc:#ec7a55;--acc2:#5fb39d}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);display:grid;grid-template-columns:minmax(320px,420px) 1fr;height:100dvh}
+aside{padding:14px;overflow:auto;border-right:1px solid var(--line)}
+#map{height:100%;min-height:260px}
+#tabs{display:none}
+h1{font-size:19px;margin:0 0 2px}
+.sub{color:var(--mute);font-size:13px;margin:0 0 12px}
+input,select,button{font:inherit;color:var(--ink)}
+input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);min-height:40px}
+button{cursor:pointer;border:0;border-radius:8px;padding:9px 12px;background:var(--acc);color:#fff;font-weight:600;min-height:40px}
+button.alt{background:var(--card);color:var(--ink);border:1px solid var(--line);font-weight:500}
+button.x{background:none;color:var(--mute);border:1px solid var(--line);font-weight:400;padding:2px 8px;font-size:12px;min-height:0}
+.row{display:flex;gap:8px;margin-bottom:8px}
+.row>*{flex:1}
+.res{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:8px 10px;margin-bottom:6px;cursor:pointer;font-size:13px}
+.item{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px;margin:8px 0}
+.item.sel{border-color:var(--acc)}
+.meta{font-size:12px;color:var(--mute)}
+.badge{font-size:12px;background:var(--bg);border-radius:20px;padding:1px 8px;margin-right:4px}
+.stars{display:flex;align-items:center;gap:2px;margin:6px 0 2px;flex-wrap:wrap}
+.st{background:none;border:0;padding:0 1px;min-height:0;font-size:24px;line-height:1;color:var(--line)}
+.st.on{color:#b9b2a7}.stars.mine .st.on{color:var(--star)}
+.avg{font-size:13px;margin-left:6px}
+.warn{background:var(--card);border:1px dashed var(--acc);border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:10px}
+.bar{display:flex;gap:8px;align-items:center;margin-top:12px}
+.bar label{font-size:13px;color:var(--mute);white-space:nowrap}
+.pop label{display:block;font-size:12px;color:#555;margin:6px 0 2px}
+.pop input,.pop select{color:#222;background:#fff}
+.pop button{margin-top:8px;width:100%}
+.leaflet-popup-content{min-width:220px}
+@media(max-width:1000px) and (min-width:821px){body{grid-template-columns:320px 1fr}}
+@media(max-width:820px){
+  body{grid-template-columns:1fr;grid-template-rows:1fr auto;padding-top:env(safe-area-inset-top,0)}
+  aside,#mapbox{grid-row:1;grid-column:1;border:0}
+  body[data-view="map"] aside{display:none}
+  body[data-view="list"] #mapbox{display:none}
+  #tabs{display:flex;grid-row:2;border-top:1px solid var(--line);background:var(--card);padding-bottom:env(safe-area-inset-bottom,0)}
+  #tabs button{flex:1;border-radius:0;background:none;color:var(--mute);min-height:48px}
+  body[data-view="map"] #tmap,body[data-view="list"] #tlist{color:var(--acc);box-shadow:inset 0 3px 0 var(--acc)}
+}
+</style>
+</head>
+<body data-view="map">
+<aside>
+  <h1>🍽️ Restos autour du Palais de la Découverte</h1>
+  <p class="sub">Cherchez une adresse, ajoutez-la, notez les restos des collègues.</p>
+  <div class="warn" id="warn" hidden>Mode local : la liste n’est pas partagée. Renseignez la configuration Firebase dans le fichier (voir le guide) pour partager la liste et les notes.</div>
+
+  <form id="sf" class="row" style="flex-wrap:nowrap"><input id="q" placeholder="Nom ou adresse (ex. : Le Fouquet’s)" aria-label="Rechercher"><button style="flex:0 0 52px">🔍</button></form>
+  <div id="res"></div>
+  <div class="row">
+    <button class="alt" id="near">📍 Restos proches</button>
+    <button class="alt" id="manual">➕ Ajouter à la main</button>
+    <button class="alt" id="share">🔗 Partager</button>
+  </div>
+  <div class="meta" id="status"></div>
+
+  <div class="bar"><b>Notre liste (<span id="n">0</span>)</b>
+    <label for="sort" style="margin-left:auto">Trier par</label>
+    <select id="sort" style="width:auto"><option value="dist">Distance</option><option value="pa">Prix croissant</option><option value="pd">Prix décroissant</option><option value="rating">Meilleure note</option><option value="recent">Plus récents</option></select>
+  </div>
+  <div id="list"></div>
+</aside>
+<div id="mapbox"><div id="map"></div></div>
+<nav id="tabs"><button id="tmap">🗺️ Carte</button><button id="tlist">📋 Liste</button></nav>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// ====== À REMPLIR : configuration Firebase (voir le guide, étape 4) ======
+var FIREBASE_CONFIG={apiKey:"AIzaSyAXPlEvS7QQvHge2F7BwlcehK_2WhF7B-M",authDomain:"palais-gourmand.firebaseapp.com",projectId:"palais-gourmand",appId:"1:732616246684:web:bd844c835f30709d8cf459"};
+// =========================================================================
+
+(function(){
+  var CENTER=[48.8664,2.3106],KEY="restos-pdd-local";
+  var $=function(i){return document.getElementById(i)};
+  function h(t,c,x){var n=document.createElement(t);if(c)n.className=c;if(x!=null)n.textContent=x;return n}
+  var uid;try{uid=localStorage.getItem("restos-uid");if(!uid){uid="u"+Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem("restos-uid",uid)}}catch(e){uid="u"+Math.random().toString(36).slice(2)}
+  var who="";try{who=localStorage.getItem("restos-who")||""}catch(e){}
+  var restos=[],db=null,sel=null,pick=false;
+
+  function show(v){document.body.dataset.view=v;if(v==="map")setTimeout(function(){map.invalidateSize()},60)}
+  $("tmap").onclick=function(){show("map")};$("tlist").onclick=function(){show("list")};
+
+  var map=L.map("map").setView(CENTER,16);
+  var TILES=[
+    ["https://tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",{maxZoom:20,attribution:'&copy; OpenStreetMap France | &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}],
+    ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"Tiles &copy; Esri"}],
+    ["https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; CARTO'}]
+  ];
+  var ti=0,tl=null,terr=0;
+  function useTiles(){if(tl)map.removeLayer(tl);terr=0;tl=L.tileLayer(TILES[ti][0],TILES[ti][1]).addTo(map);tl.on("tileerror",function(){if(++terr===3&&ti<TILES.length-1){ti++;useTiles()}})}
+  useTiles();
+  L.circle(CENTER,{radius:500,color:"#2f6f5e",weight:1,fillOpacity:.04}).addTo(map);
+  L.marker(CENTER).addTo(map).bindTooltip("Palais de la Découverte",{permanent:true,direction:"top",offset:[-15,-8]});
+  var gSaved=L.layerGroup().addTo(map),gTmp=L.layerGroup().addTo(map),gNear=L.layerGroup().addTo(map);
+
+  // ---------- Stockage : Firebase (partagé) ou local ----------
+  function persist(){try{localStorage.setItem(KEY,JSON.stringify(restos))}catch(e){}}
+  function startDB(){
+    if(window.firebase&&FIREBASE_CONFIG.projectId){
+      try{
+        firebase.initializeApp(FIREBASE_CONFIG);db=firebase.firestore();
+        db.collection("restos").onSnapshot(function(s){restos=s.docs.map(function(d){var o=d.data();o.id=d.id;return o});render()},function(){$("warn").hidden=false;$("warn").textContent="Connexion à la base impossible : vérifiez la configuration et les règles Firebase."});
+        return;
+      }catch(e){}
+    }
+    try{restos=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){}
+    $("warn").hidden=false;
+  }
+  function save(r){if(db)db.collection("restos").doc(r.id).set(r).catch(fail);else{restos.push(r);persist();render()}}
+  function del(id){if(db)db.collection("restos").doc(id).delete().catch(fail);else{restos=restos.filter(function(r){return r.id!==id});persist();render()}}
+  function rate(r,n){
+    if(db){var o={};o[uid]=n;db.collection("restos").doc(r.id).set({ratings:o},{merge:true}).catch(fail)}
+    else{r.ratings=r.ratings||{};r.ratings[uid]=n;persist();render()}
+  }
+  function fail(e){alert("Action impossible : "+(e&&e.message||e))}
+
+  // ---------- Utilitaires ----------
+  function dist(a,b){var R=6371000,r=Math.PI/180,dl=(b[0]-a[0])*r,dn=(b[1]-a[1])*r;var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dn/2)*Math.sin(dn/2);return Math.round(2*R*Math.asin(Math.sqrt(x)))}
+  function avg(r){var v=Object.keys(r.ratings||{}).map(function(k){return r.ratings[k]});return{n:v.length,a:v.length?v.reduce(function(s,x){return s+x},0)/v.length:0}}
+  function fmt(a){a=a||{};return [((a.house_number||"")+" "+(a.road||"")).trim(),((a.postcode||"")+" "+(a.city||"")).trim()].filter(Boolean).join(", ")}
+  function osmAddr(t){return [((t["addr:housenumber"]||"")+" "+(t["addr:street"]||"")).trim(),((t["addr:postcode"]||"")+" "+(t["addr:city"]||"")).trim()].filter(Boolean).join(", ")}
+  function cid(s){return String(s).replace(/[\/\s]/g,"_")}
+
+  // ---------- Fenêtre d'ajout ----------
+  function popup(p){
+    var d=h("div","pop");
+    function add(l,n){d.appendChild(h("label",null,l));d.appendChild(n)}
+    var nm,ad;
+    if(p.manual){nm=h("input");nm.maxLength=60;nm.placeholder="Nom du restaurant";ad=h("input");ad.maxLength=120;ad.placeholder="12 rue de la Paix, 75002 Paris";add("Nom",nm);add("Adresse",ad)}
+    else{d.appendChild(h("b",null,p.name));d.appendChild(h("div",null,p.addr||"")).style.cssText="font-size:12px;color:#666"}
+    var cu=h("select");["Française","Italienne","Asiatique","Libanaise","Burger","Végétarien","Sandwich / Boulangerie","Café","Autre"].forEach(function(c){cu.appendChild(h("option",null,c))});
+    var pr=h("select");[["1","€ (moins de 12 €)"],["2","€€ (12–20 €)"],["3","€€€ (plus de 20 €)"]].forEach(function(c){var o=h("option",null,c[1]);o.value=c[0];pr.appendChild(o)});pr.value="2";
+    var no=h("input");no.maxLength=200;no.placeholder="Plat à tester, ambiance…";
+    var wh=h("input");wh.maxLength=30;wh.value=who;wh.placeholder="Votre prénom";
+    add("Cuisine",cu);add("Budget",pr);add("Votre avis",no);add("Prénom",wh);
+    var bt=h("button",null,"Ajouter à la liste");
+    bt.onclick=function(){
+      var name=p.manual?nm.value.trim():p.name;
+      if(!name){alert("Indiquez le nom du restaurant.");return}
+      if(restos.some(function(s){return s.id===p.id})){alert("Ce restaurant est déjà dans la liste.");return}
+      who=wh.value.trim();try{localStorage.setItem("restos-who",who)}catch(e){}
+      save({id:cid(p.id),name:name,addr:p.manual?ad.value.trim():(p.addr||""),lat:p.lat,lon:p.lon,cuisine:cu.value,price:+pr.value,note:no.value.trim(),who:who,ts:Date.now(),ratings:{}});
+      map.closePopup();gTmp.clearLayers();
+    };
+    d.appendChild(bt);return d;
+  }
+  function openPlace(p){
+    show("map");gTmp.clearLayers();
+    L.circleMarker([p.lat,p.lon],{radius:9,color:"#1a6fd1",fillColor:"#1a6fd1",fillOpacity:.8}).addTo(gTmp);
+    map.flyTo([p.lat,p.lon],p.manual?map.getZoom():Math.max(map.getZoom(),17),{duration:.5});
+    setTimeout(function(){L.popup().setLatLng([p.lat,p.lon]).setContent(popup(p)).openOn(map)},p.manual?0:600);
+  }
+  $("manual").onclick=function(){pick=true;show("map");$("status").textContent="Cliquez sur la carte à l’emplacement du restaurant…";map.getContainer().style.cursor="crosshair"};
+  map.on("click",function(e){if(!pick)return;pick=false;map.getContainer().style.cursor="";$("status").textContent="";openPlace({id:"m"+Date.now(),lat:e.latlng.lat,lon:e.latlng.lng,manual:true})});
+
+  // ---------- Liste ----------
+  function sorted(){
+    var s=$("sort").value;
+    var a=restos.map(function(r){r._d=dist(CENTER,[r.lat,r.lon]);r._r=avg(r);return r});
+    var by={dist:function(x,y){return x._d-y._d},pa:function(x,y){return (x.price-y.price)||(x._d-y._d)},pd:function(x,y){return (y.price-x.price)||(x._d-y._d)},
+      rating:function(x,y){return (y._r.a-x._r.a)||(y._r.n-x._r.n)},recent:function(x,y){return (y.ts||0)-(x.ts||0)}};
+    return a.sort(by[s]);
+  }
+  function render(){
+    gSaved.clearLayers();var L2=$("list");L2.innerHTML="";$("n").textContent=restos.length;
+    var list=sorted();
+    if(!list.length)L2.appendChild(h("div","meta","Aucune adresse pour l’instant."));
+    list.forEach(function(r){
+      var mine=(r.ratings||{})[uid],on=mine||Math.round(r._r.a);
+      var mk=L.circleMarker([r.lat,r.lon],{radius:9,color:"#fff",weight:2,fillColor:"#c8512b",fillOpacity:1}).addTo(gSaved);
+      var info=h("div");info.appendChild(h("b",null,r.name));info.appendChild(h("div",null,(r._r.n?"★ "+r._r.a.toFixed(1)+" ("+r._r.n+")":"Pas encore noté")+" · "+"€€€".slice(0,r.price)+" · "+r._d+" m"));
+      mk.bindPopup(info);mk.on("click",function(){sel=r.id;render()});
+      var d=h("div","item"+(r.id===sel?" sel":""));
+      d.appendChild(h("b",null,r.name));
+      var m=h("div","meta");m.appendChild(h("span","badge",r.cuisine));m.appendChild(h("span","badge","€€€".slice(0,r.price)));
+      m.appendChild(document.createTextNode(r._d+" m · "+Math.max(1,Math.round(r._d/80))+" min à pied"+(r.who?" · par "+r.who:"")));d.appendChild(m);
+      if(r.addr)d.appendChild(h("div","meta",r.addr));
+      var st=h("div","stars"+(mine?" mine":""));
+      for(var i=1;i<=5;i++){(function(i){var b=h("button","st"+(i<=on?" on":""),"★");b.title=i+" / 5";b.setAttribute("aria-label","Noter "+i+" sur 5");b.onclick=function(){rate(r,i)};st.appendChild(b)})(i)}
+      st.appendChild(h("span","avg",r._r.n?r._r.a.toFixed(1)+"/5 · "+r._r.n+" vote"+(r._r.n>1?"s":"")+(mine?" · votre note : "+mine:""):"Soyez le premier à noter"));
+      d.appendChild(st);
+      if(r.note)d.appendChild(h("div",null,"“"+r.note+"”"));
+      var lk=h("a",null,"Itinéraire ↗");lk.href="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(r.name+" "+r.addr);lk.target="_blank";lk.rel="noopener";lk.style.cssText="font-size:13px;color:var(--acc2);margin-right:10px";
+      var vm=h("button","x","Voir sur la carte");vm.onclick=function(){sel=r.id;show("map");map.flyTo([r.lat,r.lon],17);mk.openPopup()};
+      var x=h("button","x","Supprimer");x.style.marginLeft="6px";x.onclick=function(){if(confirm("Supprimer « "+r.name+" » pour tout le monde ?"))del(r.id)};
+      d.appendChild(lk);d.appendChild(vm);d.appendChild(x);L2.appendChild(d);
+    });
+  }
+  $("sort").onchange=render;
+
+  // ---------- Recherche d'adresses ----------
+  $("sf").onsubmit=function(e){
+    e.preventDefault();var q=$("q").value.trim();if(!q)return;
+    $("res").innerHTML="";$("res").appendChild(h("div","meta","Recherche…"));
+    fetch("https://photon.komoot.io/api/?lang=fr&limit=6&lat=48.8664&lon=2.3106&q="+encodeURIComponent(q))
+    .then(function(r){return r.json()}).then(function(g){
+      return g.features.map(function(f){var t=f.properties;return{id:(t.osm_type||"")+t.osm_id,name:t.name||[t.housenumber,t.street].filter(Boolean).join(" "),addr:fmt({house_number:t.housenumber,road:t.street,postcode:t.postcode,city:t.city}),lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]}});
+    }).catch(function(){
+      return fetch("https://api-adresse.data.gouv.fr/search/?limit=6&lat=48.8664&lon=2.3106&q="+encodeURIComponent(q))
+      .then(function(r){return r.json()}).then(function(g){return g.features.map(function(f){var t=f.properties;return{id:"ban"+t.id,name:t.name,addr:t.postcode+" "+t.city,lat:f.geometry.coordinates[1],lon:f.geometry.coordinates[0]}})});
+    }).then(function(js){
+      var box=$("res");box.innerHTML="";
+      if(!js.length){box.appendChild(h("div","meta","Aucun résultat. Utilisez « Ajouter à la main »."));return}
+      js.forEach(function(p){var d=h("div","res");d.appendChild(h("b",null,p.name));d.appendChild(h("div","meta",p.addr));d.onclick=function(){openPlace(p)};box.appendChild(d)});
+    }).catch(function(){$("res").innerHTML="";$("res").appendChild(h("div","meta","Recherche indisponible. Utilisez « Ajouter à la main »."))});
+  };
+
+  // ---------- Restaurants proches (OpenStreetMap) ----------
+  $("near").onclick=function(){
+    $("status").textContent="Chargement…";
+    var q='[out:json][timeout:25];nwr(around:500,'+CENTER[0]+','+CENTER[1]+')[amenity~"^(restaurant|fast_food|cafe)$"][name];out center 80;';
+    fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:"data="+encodeURIComponent(q)})
+    .then(function(r){return r.json()}).then(function(js){
+      gNear.clearLayers();var n=0;
+      js.elements.forEach(function(el){
+        var lat=el.lat||(el.center&&el.center.lat),lon=el.lon||(el.center&&el.center.lon);if(!lat)return;n++;
+        var p={id:el.type+el.id,name:el.tags.name,addr:osmAddr(el.tags),lat:lat,lon:lon};
+        L.circleMarker([lat,lon],{radius:6,color:"#fff",weight:1,fillColor:"#6b7280",fillOpacity:.9}).addTo(gNear).bindTooltip(p.name).on("click",function(){openPlace(p)});
+      });
+      $("status").textContent=n+" adresses (points gris) : touchez-en une pour l’ajouter.";show("map");
+    }).catch(function(){$("status").textContent="Service indisponible, réessayez dans un instant."});
+  };
+
+  $("share").onclick=function(){
+    var u=location.href.split("#")[0];
+    if(navigator.share){navigator.share({title:document.title,url:u}).catch(function(){})}
+    else if(navigator.clipboard){navigator.clipboard.writeText(u).then(function(){$("status").textContent="Lien copié."})}
+    else prompt("Copiez ce lien :",u);
+  };
+
+  startDB();render();
+})();
+</script>
+</body>
+</html>
